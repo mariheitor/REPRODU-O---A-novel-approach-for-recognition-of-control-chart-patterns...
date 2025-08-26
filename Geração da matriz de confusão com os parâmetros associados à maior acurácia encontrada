@@ -1,0 +1,191 @@
+# Geração da matriz de confusão com os parâmetros associados à maior acurácia encontrada
+
+     #OAO
+import numpy as np
+import pandas as pd
+import random
+from sklearn.svm import SVC
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, confusion_matrix
+from skfuzzy.cluster import cmeans
+
+# Carregar os dados
+url = "https://kdd.ics.uci.edu/databases/synthetic_control/synthetic_control.data"
+data = pd.read_csv(url, header=None, delim_whitespace=True)
+data = data.to_numpy()
+
+# Número de clusters (6 padrões de gráficos)
+num_clusters = 6
+labels_dict = {0: "Normal", 1: "Cíclico", 2: "Tendência Crescente", 3: "Tendência Decrescente", 4: "Mudança Crescente", 5: "Mudança Decrescente"}
+
+def type2_fuzzy_cmeans(data, num_clusters, m=2, error=1e-5, max_iter=1000):
+    np.random.seed(None)  # Garante inicialização diferente a cada execução
+    cntr, u, _, _, _, _, _ = cmeans(data.T + np.random.randn(*data.T.shape) * 0.01, num_clusters, m, error, max_iter)
+    membership_values = u.T  # Valores de pertinência como entrada para o SVM
+    return membership_values
+
+# Aplicar Type-2 Fuzzy C-Means
+membership_values = type2_fuzzy_cmeans(data, num_clusters)
+
+# Criar os rótulos (100 amostras por classe)
+y = np.repeat(np.arange(6), 100)
+y_labels = np.array([labels_dict[i] for i in y])  # Converter números para rótulos
+
+# Separar dados em treino e teste
+X_train, X_test, y_train, y_test = train_test_split(membership_values, y_labels, test_size=0.2)
+
+# Permitir entrada manual de C e gamma
+C_manual = float(input("Digite o valor de C: "))
+gamma_manual = float(input("Digite o valor de gamma: "))
+
+# Treinar SVM apenas com OAO
+model = SVC(kernel='rbf', C=C_manual, gamma=gamma_manual, decision_function_shape='ovo')
+model.fit(X_train, y_train)
+y_pred = model.predict(X_test)
+accuracy = accuracy_score(y_test, y_pred)
+
+# Calcular threshold
+threshold = np.mean(membership_values)
+
+# Criar DataFrame com os resultados
+results_df = pd.DataFrame({
+    "Acurácia (%)": [accuracy * 100],
+    "Threshold": [threshold]
+})
+
+# Criar matriz de confusão como DataFrame
+conf_matrix = confusion_matrix(y_test, y_pred, labels=list(labels_dict.values()))
+conf_matrix_df = pd.DataFrame(conf_matrix, index=list(labels_dict.values()), columns=list(labels_dict.values()))
+
+# Exibir os resultados
+print("Resultados do SVM:")
+print(results_df.to_string(index=False))
+print("\nMatriz de Confusão:")
+print(conf_matrix_df.to_string())
+
+      #OAA
+import numpy as np
+import pandas as pd
+import random
+from sklearn.svm import SVC
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, confusion_matrix
+from skfuzzy.cluster import cmeans
+
+# Carregar os dados
+url = "https://kdd.ics.uci.edu/databases/synthetic_control/synthetic_control.data"
+data = pd.read_csv(url, header=None, delim_whitespace=True)
+data = data.to_numpy()
+
+# Número de clusters (6 padrões de gráficos)
+num_clusters = 6
+labels_dict = {0: "Normal", 1: "Cíclico", 2: "Tendência Crescente", 3: "Tendência Decrescente", 4: "Mudança Crescente", 5: "Mudança Decrescente"}
+
+def type2_fuzzy_cmeans(data, num_clusters, m=2, error=1e-5, max_iter=1000):
+    np.random.seed(None)  # Garante inicialização diferente a cada execução
+    cntr, u, _, _, _, _, _ = cmeans(data.T + np.random.randn(*data.T.shape) * 0.01, num_clusters, m, error, max_iter)
+    membership_values = u.T  # Valores de pertinência como entrada para o SVM
+    return membership_values
+
+# Aplicar Type-2 Fuzzy C-Means
+membership_values = type2_fuzzy_cmeans(data, num_clusters)
+
+# Criar os rótulos (100 amostras por classe)
+y = np.repeat(np.arange(6), 100)
+y_labels = np.array([labels_dict[i] for i in y])  # Converter números para rótulos
+
+# Separar dados em treino e teste
+X_train, X_test, y_train, y_test = train_test_split(membership_values, y_labels, test_size=0.2)
+
+# Permitir entrada manual de C e gamma
+C_manual = float(input("Digite o valor de C: "))
+gamma_manual = float(input("Digite o valor de gamma: "))
+
+# Treinar SVM apenas com OAA
+model = SVC(kernel='rbf', C=C_manual, gamma=gamma_manual, decision_function_shape='ovr')
+model.fit(X_train, y_train)
+y_pred = model.predict(X_test)
+accuracy = accuracy_score(y_test, y_pred)
+
+# Calcular threshold
+threshold = np.mean(membership_values)
+
+# Criar DataFrame com os resultados
+results_df = pd.DataFrame({
+    "Acurácia (%)": [accuracy * 100],
+    "Threshold": [threshold]
+})
+
+# Criar matriz de confusão como DataFrame
+conf_matrix = confusion_matrix(y_test, y_pred, labels=list(labels_dict.values()))
+conf_matrix_df = pd.DataFrame(conf_matrix, index=list(labels_dict.values()), columns=list(labels_dict.values()))
+
+# Exibir os resultados
+print("Resultados do SVM:")
+print(results_df.to_string(index=False))
+print("\nMatriz de Confusão:")
+print(conf_matrix_df.to_string())
+
+
+      #DAG
+import numpy as np
+import pandas as pd
+import random
+from sklearn.svm import SVC
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import confusion_matrix
+from skfuzzy.cluster import cmeans
+from mlxtend.classifier import EnsembleVoteClassifier
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+# Carregar os dados
+url = "https://kdd.ics.uci.edu/databases/synthetic_control/synthetic_control.data"
+data = pd.read_csv(url, header=None, delim_whitespace=True)
+data = data.to_numpy()
+
+# Nome dos padrões
+pattern_names = ["Normal", "Cíclico", "Crescente", "Decrescente", "Mudança Crescente", "Mudança Decrescente"]
+
+# Número de clusters (6 padrões de gráficos)
+num_clusters = 6
+
+def type2_fuzzy_cmeans(data, num_clusters, m=2, error=1e-5, max_iter=1000):
+    np.random.seed(None)  # Garante inicialização diferente a cada execução
+    cntr, u, _, _, _, _, _ = cmeans(data.T + np.random.randn(*data.T.shape) * 0.01, num_clusters, m, error, max_iter)
+    membership_values = u.T  # Valores de pertinência como entrada para o SVM
+    return membership_values
+
+# Aplicar Type-2 Fuzzy C-Means
+membership_values = type2_fuzzy_cmeans(data, num_clusters)
+
+# Criar os rótulos (100 amostras por classe)
+y = np.repeat(np.arange(6), 100)
+
+# Separar dados em treino e teste
+X_train, X_test, y_train, y_test = train_test_split(membership_values, y, test_size=0.2)
+
+# Solicitar entrada manual de C e gamma
+C_manual = float(input("Digite o valor de C: "))
+gamma_manual = float(input("Digite o valor de gamma: "))
+
+# Treinar SVM com DAG
+svm_classifiers = []
+for i in range(6):
+    for j in range(i + 1, 6):
+        clf = SVC(kernel='rbf', C=C_manual, gamma=gamma_manual)
+        mask = (y_train == i) | (y_train == j)
+        clf.fit(X_train[mask], y_train[mask])
+        svm_classifiers.append(clf)
+
+dag_svm = EnsembleVoteClassifier(clfs=svm_classifiers, voting='hard')
+dag_svm.fit(X_train, y_train)
+y_pred = dag_svm.predict(X_test)
+
+# Criar matriz de confusão
+conf_matrix = confusion_matrix(y_test, y_pred, normalize='true') * 100
+conf_df = pd.DataFrame(conf_matrix, index=pattern_names, columns=[f'Predito {pattern_names[i]}' for i in range(6)])
+
+# Exibir matriz de confusão como tabela
+print("Matriz de Confusão (%):")
+print(conf_df)
