@@ -1,0 +1,262 @@
+# Implemetação geral - obtenção da malhor acurácia e parâmetros entre 10 rodadas
+    #OAO
+import numpy as np
+import pandas as pd
+import random
+from sklearn.svm import SVC
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, confusion_matrix
+from skfuzzy.cluster import cmeans
+
+# Carregar os dados
+url = "https://kdd.ics.uci.edu/databases/synthetic_control/synthetic_control.data"
+data = pd.read_csv(url, header=None, delim_whitespace=True)
+data = data.to_numpy()
+
+# Número de clusters (6 padrões de gráficos)
+num_clusters = 6
+labels_dict = {0: "Normal", 1: "Cíclico", 2: "Tendência Crescente", 3: "Tendência Decrescente", 4: "Mudança Crescente", 5: "Mudança Decrescente"}
+
+def type2_fuzzy_cmeans(data, num_clusters, m=2, error=1e-5, max_iter=1000):
+    np.random.seed(None)  # Garante inicialização diferente a cada execução
+    cntr, u, _, _, _, _, _ = cmeans(data.T + np.random.randn(*data.T.shape) * 0.01, num_clusters, m, error, max_iter)
+    membership_values = u.T  # Valores de pertinência como entrada para o SVM
+    return membership_values
+
+# Aplicar Type-2 Fuzzy C-Means
+membership_values = type2_fuzzy_cmeans(data, num_clusters)
+
+# Criar os rótulos (100 amostras por classe)
+y = np.repeat(np.arange(6), 100)
+y_labels = np.array([labels_dict[i] for i in y])  # Converter números para rótulos
+
+# Separar dados em treino e teste
+X_train, X_test, y_train, y_test = train_test_split(membership_values, y_labels, test_size=0.2)
+
+# Permitir entrada manual de C e gamma
+C_manual = float(input("Digite o valor de C: "))
+gamma_manual = float(input("Digite o valor de gamma: "))
+
+# Treinar SVM apenas com OAO
+model = SVC(kernel='rbf', C=C_manual, gamma=gamma_manual, decision_function_shape='ovo')
+model.fit(X_train, y_train)
+y_pred = model.predict(X_test)
+accuracy = accuracy_score(y_test, y_pred)
+
+# Calcular threshold
+threshold = np.mean(membership_values)
+
+# Criar DataFrame com os resultados
+results_df = pd.DataFrame({
+    "Acurácia (%)": [accuracy * 100],
+    "Threshold": [threshold]
+})
+
+# Criar matriz de confusão como DataFrame
+conf_matrix = confusion_matrix(y_test, y_pred, labels=list(labels_dict.values()))
+conf_matrix_df = pd.DataFrame(conf_matrix, index=list(labels_dict.values()), columns=list(labels_dict.values()))
+
+# Exibir os resultados
+print("Resultados do SVM:")
+print(results_df.to_string(index=False))
+print("\nMatriz de Confusão:")
+print(conf_matrix_df.to_string())
+
+
+      #OAA
+import numpy as np
+import pandas as pd
+import random
+from sklearn.svm import SVC
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score
+from skfuzzy.cluster import cmeans
+
+# Carregar os dados
+url = "https://kdd.ics.uci.edu/databases/synthetic_control/synthetic_control.data"
+data = pd.read_csv(url, header=None, delim_whitespace=True)
+data = data.to_numpy()
+
+# Número de clusters (6 padrões de gráficos)
+num_clusters = 6
+
+def type2_fuzzy_cmeans(data, num_clusters, m=2, error=1e-5, max_iter=1000):
+    np.random.seed(None)  # Garante inicialização diferente a cada execução
+    cntr, u, _, _, _, _, _ = cmeans(data.T + np.random.randn(*data.T.shape) * 0.01, num_clusters, m, error, max_iter)
+    membership_values = u.T  # Valores de pertinência como entrada para o SVM
+    return membership_values
+
+# Aplicar Type-2 Fuzzy C-Means
+membership_values = type2_fuzzy_cmeans(data, num_clusters)
+
+# Criar os rótulos (100 amostras por classe)
+y = np.repeat(np.arange(6), 100)
+
+# Separar dados em treino e teste (sem random_state fixo para variação entre execuções)
+X_train, X_test, y_train, y_test = train_test_split(membership_values, y, test_size=0.2)
+
+# Parâmetros do Cuckoo Optimization Algorithm (COA) conforme Tabela 2 do artigo
+num_cuckoos = 40
+min_eggs = 2
+max_eggs = 5
+num_clusters = 2
+max_cuckoos = 200
+alpha = 30
+lambda_ = 0.05
+max_iter = 100
+
+# Implementação do COA para otimizar C e gamma
+def levy_flight(Lambda):
+    sigma = (np.math.gamma(1 + Lambda) * np.sin(np.pi * Lambda / 2) / (np.math.gamma((1 + Lambda) / 2) * Lambda * 2 ** ((Lambda - 1) / 2))) ** (1 / Lambda)
+    u = np.random.randn() * sigma
+    v = np.random.randn()
+    step = u / abs(v) ** (1 / Lambda)
+    return step
+
+def cuckoo_search(n=num_cuckoos, max_iter=max_iter):
+    lb, ub = np.array([1e-5, 1e-5]), np.array([1e5, 1e-1])
+    nests = np.random.uniform(lb, ub, (n, 2))  # Garantir que os ninhos estão dentro dos limites
+    fitness = np.array([svm_objective(nest) for nest in nests])
+    best_nest = nests[np.argmin(fitness)]
+    best_fitness = min(fitness)
+
+    for _ in range(max_iter):
+        new_nests = nests + levy_flight(lambda_) * (nests - best_nest)
+        new_nests = np.clip(new_nests, lb, ub)  # Garante que os valores estão dentro dos limites
+        new_fitness = np.array([svm_objective(nest) for nest in new_nests])
+        replace = new_fitness < fitness
+        nests[replace] = new_nests[replace]
+        fitness[replace] = new_fitness[replace]
+
+        if min(new_fitness) < best_fitness:
+            best_nest = new_nests[np.argmin(new_fitness)]
+            best_fitness = min(new_fitness)
+
+    return best_nest
+
+# Função de otimização para SVM
+def svm_objective(params):
+    C, gamma = params
+    C = max(C, 1e-5)  # Garante que C seja positivo
+    gamma = max(gamma, 1e-5)  # Garante que gamma seja positivo
+    model = SVC(kernel='rbf', C=C, gamma=gamma)
+    model.fit(X_train, y_train)
+    y_pred = model.predict(X_test)
+    return -accuracy_score(y_test, y_pred)  # Maximizar a acurácia
+
+# Executar Cuckoo Search
+C_opt, gamma_opt = cuckoo_search()
+
+# Treinar SVM apenas com OAA
+model = SVC(kernel='rbf', C=C_opt, gamma=gamma_opt, decision_function_shape='ovr')
+model.fit(X_train, y_train)
+y_pred = model.predict(X_test)
+accuracy = accuracy_score(y_test, y_pred)
+print(f"Acurácia do SVM (OAA): {accuracy * 100:.2f}%")
+
+# Calcular e imprimir threshold
+threshold = np.mean(membership_values)
+print(f"Threshold: {threshold:.4f}")
+print(C_opt, gamma_opt)
+
+
+      #DAG
+import numpy as np
+import pandas as pd
+import random
+from sklearn.svm import SVC
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score
+from skfuzzy.cluster import cmeans
+from mlxtend.classifier import EnsembleVoteClassifier
+
+# Carregar os dados
+url = "https://kdd.ics.uci.edu/databases/synthetic_control/synthetic_control.data"
+data = pd.read_csv(url, header=None, delim_whitespace=True)
+data = data.to_numpy()
+
+# Número de clusters (6 padrões de gráficos)
+num_clusters = 6
+
+def type2_fuzzy_cmeans(data, num_clusters, m=2, error=1e-5, max_iter=1000):
+    np.random.seed(None)  # Garante inicialização diferente a cada execução
+    cntr, u, _, _, _, _, _ = cmeans(data.T + np.random.randn(*data.T.shape) * 0.01, num_clusters, m, error, max_iter)
+    membership_values = u.T  # Valores de pertinência como entrada para o SVM
+    return membership_values
+
+# Aplicar Type-2 Fuzzy C-Means
+membership_values = type2_fuzzy_cmeans(data, num_clusters)
+
+# Criar os rótulos (100 amostras por classe)
+y = np.repeat(np.arange(6), 100)
+
+# Separar dados em treino e teste (sem random_state fixo para variação entre execuções)
+X_train, X_test, y_train, y_test = train_test_split(membership_values, y, test_size=0.2)
+
+# Parâmetros do Cuckoo Optimization Algorithm (COA) conforme Tabela 2 do artigo
+num_cuckoos = 40
+min_eggs = 2
+max_eggs = 5
+num_clusters = 2
+max_cuckoos = 200
+alpha = 30
+lambda_ = 0.05
+max_iter = 100
+
+# Implementação do COA para otimizar C e gamma
+def levy_flight(Lambda):
+    sigma = (np.math.gamma(1 + Lambda) * np.sin(np.pi * Lambda / 2) / (np.math.gamma((1 + Lambda) / 2) * Lambda * 2 ** ((Lambda - 1) / 2))) ** (1 / Lambda)
+    u = np.random.randn() * sigma
+    v = np.random.randn()
+    step = u / abs(v) ** (1 / Lambda)
+    return step
+
+def cuckoo_search(n=num_cuckoos, max_iter=max_iter):
+    lb, ub = np.array([1e-5, 1e-5]), np.array([1e5, 1e-1])
+    nests = np.random.uniform(lb, ub, (n, 2))  # Garantir que os ninhos estão dentro dos limites
+    fitness = np.array([svm_objective(nest) for nest in nests])
+    best_nest = nests[np.argmin(fitness)]
+    best_fitness = min(fitness)
+
+    for _ in range(max_iter):
+        new_nests = nests + levy_flight(lambda_) * (nests - best_nest)
+        new_nests = np.clip(new_nests, lb, ub)  # Garante que os valores estão dentro dos limites
+        new_fitness = np.array([svm_objective(nest) for nest in new_nests])
+        replace = new_fitness < fitness
+        nests[replace] = new_nests[replace]
+        fitness[replace] = new_fitness[replace]
+
+        if min(new_fitness) < best_fitness:
+            best_nest = new_nests[np.argmin(new_fitness)]
+            best_fitness = min(new_fitness)
+
+    return best_nest
+
+# Função de otimização para SVM
+def svm_objective(params):
+    C, gamma = params
+    C = max(C, 1e-5)  # Garante que C seja positivo
+    gamma = max(gamma, 1e-5)  # Garante que gamma seja positivo
+    model = SVC(kernel='rbf', C=C, gamma=gamma)
+    model.fit(X_train, y_train)
+    y_pred = model.predict(X_test)
+    return -accuracy_score(y_test, y_pred)  # Maximizar a acurácia
+
+# Executar Cuckoo Search
+C_opt, gamma_opt = cuckoo_search()
+
+# Treinar SVM com DAG
+svm_classifiers = []
+for i in range(6):
+    for j in range(i + 1, 6):
+        clf = SVC(kernel='rbf', C=C_opt, gamma=gamma_opt)
+        mask = (y_train == i) | (y_train == j)
+        clf.fit(X_train[mask], y_train[mask])
+        svm_classifiers.append(clf)
+
+dag_svm = EnsembleVoteClassifier(clfs=svm_classifiers, voting='hard')
+dag_svm.fit(X_train, y_train)
+y_pred = dag_svm.predict(X_test)
+
+accuracy = accuracy_score(y_test, y_pred)
+print(f"Acurácia do SVM (DAG): {accuracy * 100:.2f}%")
